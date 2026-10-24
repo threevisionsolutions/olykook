@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Product API Playground</title>
+<style>
+  :root { --bg:#f7f7f8; --card:#fff; --text:#18181b; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --bad:#b91c1c; --ok:#15803d; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#111113; --card:#1c1c1f; --text:#f4f4f5; --muted:#a1a1aa; --line:#2e2e33; --accent:#60a5fa; --bad:#f87171; --ok:#4ade80; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:1100px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:22px; margin:0 0 4px; } p.sub { color:var(--muted); margin:0 0 20px; }
+  .tabs { display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap; }
+  .tabs button { border:1px solid var(--line); background:var(--card); color:var(--text); padding:8px 14px; border-radius:8px; cursor:pointer; }
+  .tabs button.on { border-color:var(--accent); color:var(--accent); }
+  form { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; display:flex; gap:8px; flex-wrap:wrap; }
+  input, select, textarea { font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--text); }
+  input[type=text], textarea { flex:1 1 260px; } textarea { min-height:90px; width:100%; }
+  button.go { background:var(--accent); color:#fff; border:0; padding:8px 16px; border-radius:8px; cursor:pointer; }
+  .status { margin:14px 0; color:var(--muted); font-size:13px; display:flex; flex-wrap:wrap; gap:6px; }
+  .pill { border:1px solid var(--line); border-radius:999px; padding:2px 9px; font-size:13px; }
+  .card .muted { overflow-wrap:anywhere; }
+  .pill.ok { color:var(--ok); } .pill.error { color:var(--bad); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
+  .card img { width:100%; aspect-ratio:1; object-fit:contain; background:#fff; }
+  .card .b { padding:10px 12px; display:flex; flex-direction:column; gap:4px; flex:1; }
+  .card a { color:var(--text); text-decoration:none; font-weight:500; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .price { font-weight:700; font-size:17px; } .muted { color:var(--muted); font-size:13px; }
+  .err { color:var(--bad); } pre { white-space:pre-wrap; font-size:12px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Product API Playground</h1>
+  <p class="sub">Test page for the backend. Your real chat UI will call the same endpoints.</p>
+  <div class="tabs">
+    <button data-tab="search" class="on">Search</button>
+    <button data-tab="links">Paste links</button>
+    <button data-tab="image">Photo search</button>
+    <button data-tab="providers">Connected stores</button>
+  </div>
+
+  <form id="search">
+    <input type="text" name="q" placeholder="e.g. noise cancelling headphones" required />
+    <input name="max_price" type="number" min="0" placeholder="Max $" style="width:100px" />
+    <select name="sort"><option value="relevance">Relevance</option><option value="price_asc">Price ↑</option><option value="price_desc">Price ↓</option><option value="rating">Rating</option></select>
+    <button class="go">Search</button>
+  </form>
+  <form id="links" class="hidden">
+    <textarea name="urls" placeholder="One product link per line (Amazon, eBay, AliExpress, Walmart, any store…)"></textarea>
+    <button class="go">Read links</button>
+  </form>
+  <form id="image" class="hidden" enctype="multipart/form-data">
+    <input type="file" name="image" accept="image/*" required />
+    <input type="text" name="hint" placeholder="Optional: 'in black', 'under $50'…" />
+    <button class="go">Find it</button>
+  </form>
+  <form id="providers" class="hidden"><button class="go">Refresh</button></form>
+
+  <div class="status" id="status"></div>
+  <div class="grid" id="out"></div>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const fmt = (m) => m ? new Intl.NumberFormat(undefined, { style:"currency", currency:m.currency || "USD" }).format(m.amount) : "—";
+const safeUrl = (u) => /^https?:\/\//i.test(u || "") ? u : "#";
+
+document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll("form").forEach((f) => f.classList.toggle("hidden", f.id !== b.dataset.tab));
+  $("#out").innerHTML = ""; $("#status").innerHTML = "";
+  if (b.dataset.tab === "providers") loadProviders();
+});
+
+function card(p) {
+  return `<div class="card">${p.imageUrl ? `<img loading="lazy" src="${esc(safeUrl(p.imageUrl))}" alt="">` : ""}
+    <div class="b"><span class="muted">${esc(p.store)}${p.via === "page" ? " · read from page" : ""}</span>
+    <a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener">${esc(p.title)}</a>
+    <span class="price">${fmt(p.price)} ${p.originalPrice ? `<s class="muted">${fmt(p.originalPrice)}</s>` : ""}</span>
+    <span class="muted">${p.rating ? `★ ${p.rating}` : ""}${p.reviewCount ? ` (${p.reviewCount.toLocaleString()})` : ""}${p.condition ? ` · ${esc(p.condition)}` : ""}</span></div></div>`;
+}
+function showReports(reports = [], extra = "") {
+  $("#status").innerHTML = extra + reports.map((r) => `<span class="pill ${r.status}" title="${esc(r.error || "")}">${esc(r.provider)}: ${r.status === "ok" ? `${r.count} in ${r.ms}ms` : esc(r.status)}</span>`).join("");
+}
+async function call(url, opts) {
+  $("#status").textContent = "Loading…"; $("#out").innerHTML = "";
+  const res = await fetch(url, opts); const data = await res.json();
+  if (!res.ok) { $("#status").innerHTML = `<span class="err">${esc(data.error)}</span>`; return null; }
+  return data;
+}
+
+$("#search").onsubmit = async (e) => {
+  e.preventDefault();
+  const params = new URLSearchParams([...new FormData(e.target)].filter(([, v]) => v));
+  const data = await call(`/api/search?${params}`); if (!data) return;
+  showReports(data.providers);
+  $("#out").innerHTML = data.products.map(card).join("") || `<p class="muted">No results. Check "Connected stores".</p>`;
+};
+$("#links").onsubmit = async (e) => {
+  e.preventDefault();
+  const urls = e.target.urls.value.split(/\s+/).filter(Boolean);
+  const data = await call("/api/resolve", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ urls }) }); if (!data) return;
+  $("#status").innerHTML = "";
+  $("#out").innerHTML = data.results.map((r) => r.product ? card(r.product) : `<div class="card"><div class="b"><span class="err">${esc(r.error)}</span><span class="muted">${esc(r.input)}</span></div></div>`).join("");
+};
+$("#image").onsubmit = async (e) => {
+  e.preventDefault();
+  const data = await call("/api/search/image", { method:"POST", body: new FormData(e.target) }); if (!data) return;
+  const d = data.description;
+  showReports(data.providers, d ? `<span class="pill">Looks like: ${esc([d.brand, d.model, d.product_type].filter(Boolean).join(" "))}</span>` : "");
+  $("#out").innerHTML = data.products.map(card).join("") || `<p class="muted">No matches.</p>`;
+};
+async function loadProviders() {
+  const data = await call("/api/providers"); if (!data) return;
+  $("#status").innerHTML = "";
+  $("#out").innerHTML = data.providers.map((p) => `<div class="card"><div class="b"><strong>${esc(p.name)}</strong>
+    <span class="pill ${p.configured ? "ok" : "error"}" style="align-self:start">${p.configured ? "connected" : "not set up"}</span>
+    <span class="muted">${esc(p.setup)}</span></div></div>`).join("") +
+    `<div class="card"><div class="b"><strong>Photo → search (Claude)</strong><span class="pill ${data.imageDescription.configured ? "ok" : "error"}" style="align-self:start">${data.imageDescription.configured ? "connected" : "not set up"}</span><span class="muted">${esc(data.imageDescription.setup)}</span></div></div>`;
+}
+$("#providers").onsubmit = (e) => { e.preventDefault(); loadProviders(); };
+</script>
+</body>
+</html>
