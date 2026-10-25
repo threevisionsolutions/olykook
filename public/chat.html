@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Olykook Shopping Assistant</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --surface: #ffffff; --surface-2: #f0f0ed; --text: #1b1b1f; --muted: #6a6a73; --line: #e3e3df;
+    --accent: #1f6feb; --accent-ink: #ffffff; --accent-soft: #e8f0fe; --good: #137333; --bad: #b3261e; --star: #b7791f;
+    --pick: #fff8e6; --pick-line: #f1d48a; --radius: 14px; --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111113; --surface: #1b1b1e; --surface-2: #232327; --text: #f2f2f3; --muted: #a0a0a9; --line: #2f2f34;
+      --accent: #5b9dff; --accent-ink: #0b1220; --accent-soft: #1a2638; --good: #6dd58c; --bad: #ff8a80; --star: #f2c14e;
+      --pick: #2a2414; --pick-line: #6b5520; --shadow: none; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; }
+  a { color: var(--accent); }
+  button { font: inherit; cursor: pointer; }
+
+  header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .brand { font-weight: 700; font-size: 17px; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+  .brand .dot { width: 22px; height: 22px; border-radius: 7px; background: var(--accent); display: inline-grid; place-items: center; color: var(--accent-ink); font-size: 13px; }
+  .ghost { background: transparent; border: 1px solid var(--line); color: var(--text); border-radius: 999px; padding: 6px 12px; font-size: 14px; }
+  .ghost:hover { background: var(--surface-2); }
+
+  #scroll { flex: 1; overflow-y: auto; }
+  #thread { max-width: 860px; margin: 0 auto; padding: 20px 16px 24px; display: flex; flex-direction: column; gap: 18px; }
+
+  .empty { text-align: center; padding: 8vh 8px 0; }
+  .empty h1 { font-size: clamp(24px, 4vw, 32px); letter-spacing: -.02em; margin: 0 0 8px; }
+  .empty p { color: var(--muted); margin: 0 0 22px; }
+  .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .chip { border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 999px; padding: 8px 14px; font-size: 14px; }
+  .chip:hover { border-color: var(--accent); }
+
+  .msg-user { align-self: flex-end; max-width: min(85%, 620px); display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .bubble { background: var(--accent); color: var(--accent-ink); padding: 10px 14px; border-radius: 18px 18px 4px 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .thumbs { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .thumbs img { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+
+  .msg-ai { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .md { overflow-wrap: anywhere; }
+  .md p { margin: 0 0 10px; } .md p:last-child { margin-bottom: 0; }
+  .md ul, .md ol { margin: 4px 0 10px; padding-left: 22px; } .md li { margin: 3px 0; }
+  .md h3 { font-size: 16px; margin: 12px 0 6px; }
+  .md code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; font-size: 13px; }
+  .cursor::after { content: "▍"; color: var(--muted); animation: blink 1s steps(1) infinite; margin-left: 1px; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .tool { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13.5px; }
+  .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tool .ok { color: var(--good); } .tool .fail { color: var(--bad); }
+
+  .results { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; box-shadow: var(--shadow); min-width: 0; }
+  .results-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 0 2px 10px; font-size: 13.5px; color: var(--muted); }
+  .results-head strong { color: var(--text); font-weight: 600; }
+  .row { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 6px; }
+  .row::-webkit-scrollbar { height: 8px; } .row::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+  .card { flex: 0 0 172px; scroll-snap-align: start; text-decoration: none; color: inherit; display: flex; flex-direction: column; border-radius: 12px; border: 1px solid var(--line); overflow: hidden; background: var(--surface); }
+  .card:hover { border-color: var(--accent); }
+  .card .img { aspect-ratio: 1; background: #fff; display: grid; place-items: center; overflow: hidden; }
+  .card img { width: 100%; height: 100%; object-fit: contain; }
+  .card .noimg { color: #999; font-size: 12px; }
+  .card .body { padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 3px; flex: 1; }
+  .store { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .title { font-size: 13.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .price { font-weight: 700; margin-top: auto; } .price s { color: var(--muted); font-weight: 400; font-size: 12.5px; margin-left: 4px; }
+  .rating { font-size: 12px; color: var(--muted); } .rating b { color: var(--star); font-weight: 600; }
+  .notes { margin: 8px 2px 0; font-size: 12.5px; color: var(--muted); }
+
+  .picks { border: 1px solid var(--pick-line); background: var(--pick); border-radius: var(--radius); padding: 14px; }
+  .picks h2 { font-size: 16px; margin: 0 0 12px; }
+  .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+  .pick { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: grid; grid-template-columns: 72px 1fr; gap: 10px; align-items: start; }
+  .pick .img { width: 72px; height: 72px; border-radius: 8px; overflow: hidden; background: #fff; display: grid; place-items: center; }
+  .pick .img img { width: 100%; height: 100%; object-fit: contain; }
+  .badge { display: inline-block; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); margin-bottom: 2px; }
+  .pick .why { font-size: 13px; color: var(--muted); margin: 4px 0 8px; grid-column: 1 / -1; }
+  .pick .go { grid-column: 1 / -1; text-align: center; text-decoration: none; background: var(--accent); color: var(--accent-ink); border-radius: 8px; padding: 7px; font-size: 13.5px; font-weight: 600; }
+
+  .error { color: var(--bad); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+
+  footer { border-top: 1px solid var(--line); background: var(--surface); padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
+  .composer { max-width: 860px; margin: 0 auto; }
+  .previews { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .preview { position: relative; }
+  .preview img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+  .preview button { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: var(--text); color: var(--bg); font-size: 12px; line-height: 20px; padding: 0; }
+  .box { display: flex; align-items: flex-end; gap: 8px; border: 1px solid var(--line); border-radius: 16px; padding: 6px 6px 6px 8px; background: var(--bg); }
+  .box:focus-within { border-color: var(--accent); }
+  textarea { flex: 1; border: 0; outline: 0; resize: none; background: transparent; color: var(--text); font: inherit; padding: 7px 4px; max-height: 180px; min-height: 22px; }
+  .icon { width: 38px; height: 38px; border-radius: 12px; border: 0; display: grid; place-items: center; flex: none; }
+  .attach { background: transparent; color: var(--muted); } .attach:hover { background: var(--surface-2); color: var(--text); }
+  .send { background: var(--accent); color: var(--accent-ink); } .send:disabled { opacity: .4; cursor: default; }
+  .hint { text-align: center; color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .drop { outline: 2px dashed var(--accent); outline-offset: -8px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot">O</span> Olykook</div>
+  <button class="ghost" id="newChat" type="button">New chat</button>
+</header>
+
+<div id="scroll"><main id="thread" aria-live="polite"></main></div>
+
+<footer>
+  <form class="composer" id="composer">
+    <div class="previews" id="previews"></div>
+    <div class="box">
+      <button class="icon attach" type="button" id="attach" title="Add a photo" aria-label="Add a photo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.5-3.5L8 21"/></svg>
+      </button>
+      <input type="file" id="file" accept="image/*" multiple hidden />
+      <textarea id="input" rows="1" placeholder="Describe what you want, paste product links, or add a photo…" aria-label="Message"></textarea>
+      <button class="icon send" type="submit" id="send" aria-label="Send">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </div>
+    <div class="hint">Prices and stock come from each store and can change. Check the store before buying.</div>
+  </form>
+</footer>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const thread = $("#thread"), scroller = $("#scroll"), input = $("#input"), sendBtn = $("#send");
+let conversationId = null, busy = false, controller = null, pending = [];
+
+const SEND_ICON = sendBtn.innerHTML;
+const STOP_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+const EXAMPLES = [
+  "Noise-cancelling headphones under $200",
+  "A gift for a runner, around $75",
+  "Linen bed sheets for a queen bed",
+  "Compare: paste two or three product links",
+];
+
+// ── helpers ──
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const safeUrl = (u) => (/^https?:\/\//i.test(u || "") ? u : "#");
+const fmt = (m) => {
+  if (!m) return "";
+  try { return new Intl.NumberFormat(undefined, { style: "currency", currency: m.currency || "USD" }).format(m.amount); }
+  catch { return `${m.amount} ${m.currency}`; }
+};
+const nearBottom = () => scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 140;
+const toBottom = (force) => { if (force || nearBottom()) scroller.scrollTop = scroller.scrollHeight; };
+function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; }
+
+/** Small, safe Markdown: escape first, then bold/italic/code/links/lists/headings. */
+function md(src) {
+  const inline = (t) => esc(t)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, text, url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${text}</a>`);
+  const out = []; let list = null;
+  const close = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  for (const raw of src.split("\n")) {
+    const line = raw.trimEnd();
+    let m;
+    if ((m = line.match(/^\s*[-*•]\s+(.*)/))) { if (list !== "ul") { close(); out.push("<ul>"); list = "ul"; } out.push(`<li>${inline(m[1])}</li>`); }
+    else if ((m = line.match(/^\s*\d+[.)]\s+(.*)/))) { if (list !== "ol") { close(); out.push("<ol>"); list = "ol"; } out.push(`<li>${inline(m[1])}</li>`); }
+    else if ((m = line.match(/^#{1,6}\s+(.*)/))) { close(); out.push(`<h3>${inline(m[1])}</h3>`); }
+    else if (!line.trim()) { close(); }
+    else { close(); out.push(`<p>${inline(line)}</p>`); }
+  }
+  close();
+  return out.join("");
+}
+
+function productCard(p) {
+  const img = p.imageUrl ? `<img loading="lazy" src="${esc(safeUrl(p.imageUrl))}" alt="" referrerpolicy="no-referrer">` : `<span class="noimg">No photo</span>`;
+  const rating = p.rating ? `<span class="rating"><b>★ ${p.rating}</b>${p.reviewCount ? ` (${p.reviewCount.toLocaleString()})` : ""}</span>` : "";
+  return `<a class="card" href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener noreferrer">
+    <div class="img">${img}</div>
+    <div class="body"><span class="store">${esc(p.store)}</span><span class="title">${esc(p.title)}</span>
+    ${rating}<span class="price">${fmt(p.price) || "See price"}${p.originalPrice ? `<s>${fmt(p.originalPrice)}</s>` : ""}</span></div></a>`;
+}
+
+// ── rendering a turn ──
+function addUser(text, photos) {
+  clearEmpty();
+  const wrap = el("div", "msg-user");
+  if (photos.length) {
+    const t = el("div", "thumbs");
+    for (const p of photos) { const i = new Image(); i.src = `data:${p.mime_type};base64,${p.base64}`; i.alt = "Your photo"; t.append(i); }
+    wrap.append(t);
+  }
+  if (text) wrap.append(el("div", "bubble", esc(text)));
+  thread.append(wrap);
+  toBottom(true);
+}
+
+function startAssistant() {
+  const wrap = el("div", "msg-ai");
+  thread.append(wrap);
+  const state = { wrap, textEl: null, text: "", tools: {} };
+  state.ensureText = () => {
+    if (!state.textEl) { state.textEl = el("div", "md cursor"); state.text = ""; wrap.append(state.textEl); }
+    return state.textEl;
+  };
+  state.endText = () => { if (state.textEl) state.textEl.classList.remove("cursor"); state.textEl = null; };
+  state.thinking = el("div", "tool", `<span class="spinner"></span><span>Thinking…</span>`);
+  wrap.append(state.thinking);
+  return state;
+}
+
+function handle(state, e) {
+  const stick = nearBottom(); // decide before adding content, so big blocks don't break auto-scroll
+  if (state.thinking) { state.thinking.remove(); state.thinking = null; }
+  switch (e.type) {
+    case "conversation": conversationId = e.id; break;
+    case "text": {
+      const t = state.ensureText();
+      state.text += e.text;
+      t.innerHTML = md(state.text);
+      break;
+    }
+    case "tool_start": {
+      state.endText();
+      const row = el("div", "tool", `<span class="spinner"></span><span>${esc(e.label)}…</span>`);
+      if (e.name === "show_recommendations") row.dataset.hideOnDone = "1"; // the picks panel speaks for itself
+      state.tools[e.id] = row;
+      state.wrap.append(row);
+      break;
+    }
+    case "tool_end": {
+      const row = state.tools[e.id];
+      if (!row) break;
+      if (e.ok && row.dataset.hideOnDone) { row.remove(); break; }
+      row.querySelector(".spinner").outerHTML = e.ok ? '<span class="ok">✓</span>' : '<span class="fail">!</span>';
+      const label = row.querySelector("span:last-child");
+      label.textContent = label.textContent.replace(/…$/, "") + (e.ok ? "" : " (failed)");
+      break;
+    }
+    case "products": {
+      const box = el("section", "results");
+      const count = e.products.length;
+      box.innerHTML = `<div class="results-head"><span><strong>${esc(e.title)}</strong></span><span>${count} result${count === 1 ? "" : "s"}</span></div>` +
+        (count ? `<div class="row">${e.products.map(productCard).join("")}</div>` : `<div class="notes">No products found.</div>`) +
+        (e.notes?.length ? `<div class="notes">${e.notes.map(esc).join("<br>")}</div>` : "");
+      const row = state.tools[e.toolUseId];
+      (row ? row.after(box) : state.wrap.append(box));
+      break;
+    }
+    case "recommendations": {
+      const box = el("section", "picks");
+      box.innerHTML = `<h2>${esc(e.title)}</h2><div class="pick-grid">${e.picks.map(({ label, reason, product: p }) => `
+        <div class="pick">
+          <div class="img">${p.imageUrl ? `<img src="${esc(safeUrl(p.imageUrl))}" alt="" referrerpolicy="no-referrer">` : ""}</div>
+          <div><span class="badge">${esc(label)}</span><div class="title">${esc(p.title)}</div>
+            <div class="price">${fmt(p.price)}${p.originalPrice ? `<s>${fmt(p.originalPrice)}</s>` : ""}</div>
+            <div class="store">${esc(p.store)}${p.rating ? ` · ★ ${p.rating}` : ""}</div></div>
+          <div class="why">${esc(reason)}</div>
+          <a class="go" href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener noreferrer">View at ${esc(p.store)}</a>
+        </div>`).join("")}</div>`;
+      state.wrap.append(box);
+      break;
+    }
+    case "error": state.endText(); state.wrap.append(el("div", "error", esc(e.message))); break;
+    case "done": state.endText(); break;
+  }
+  if (stick) toBottom(true);
+}
+
+// ── sending ──
+async function send(text) {
+  if (busy) return;
+  const photos = pending.slice(0, 3);
+  if (!text.trim() && !photos.length) return;
+  pending = []; renderPreviews();
+  input.value = ""; autosize();
+  addUser(text, photos);
+  const state = startAssistant();
+  setBusy(true);
+  controller = new AbortController();
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+      body: JSON.stringify({ conversation_id: conversationId || undefined, message: text, photos }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (data.code === "expired") conversationId = null;
+      handle(state, { type: "error", message: data.error || `Error ${res.status}` });
+      return;
+    }
+    const reader = res.body.getReader(), decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let i;
+      while ((i = buf.indexOf("\n\n")) >= 0) {
+        const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+        const data = chunk.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trimStart()).join("\n");
+        if (data) { try { handle(state, JSON.parse(data)); } catch (err) { console.error(err, data); } }
+      }
+    }
+  } catch (err) {
+    handle(state, { type: "error", message: err.name === "AbortError" ? "Stopped." : "Connection lost. Please try again." });
+  } finally {
+    state.endText();
+    if (state.thinking) state.thinking.remove();
+    setBusy(false);
+    controller = null;
+    input.focus();
+  }
+}
+
+function setBusy(b) {
+  busy = b;
+  sendBtn.innerHTML = b ? STOP_ICON : SEND_ICON;
+  sendBtn.setAttribute("aria-label", b ? "Stop" : "Send");
+  sendBtn.type = b ? "button" : "submit";
+}
+sendBtn.addEventListener("click", (e) => { if (busy) { e.preventDefault(); controller?.abort(); } });
+
+$("#composer").addEventListener("submit", (e) => { e.preventDefault(); send(input.value); });
+input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(input.value); } });
+function autosize() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 180) + "px"; }
+input.addEventListener("input", autosize);
+
+// ── photos: pick, paste or drop; shrink before upload ──
+$("#attach").onclick = () => $("#file").click();
+$("#file").onchange = (e) => { addFiles(e.target.files); e.target.value = ""; };
+input.addEventListener("paste", (e) => { const files = [...e.clipboardData.files].filter((f) => f.type.startsWith("image/")); if (files.length) { e.preventDefault(); addFiles(files); } });
+document.addEventListener("dragover", (e) => { e.preventDefault(); document.body.classList.add("drop"); });
+document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) document.body.classList.remove("drop"); });
+document.addEventListener("drop", (e) => { e.preventDefault(); document.body.classList.remove("drop"); addFiles(e.dataTransfer.files); });
+
+async function addFiles(files) {
+  for (const f of [...files].filter((f) => f.type.startsWith("image/"))) {
+    if (pending.length >= 3) break;
+    try { pending.push(await shrink(f)); } catch { alert("Couldn't read that image."); }
+  }
+  renderPreviews();
+}
+function shrink(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, 1568 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      resolve({ mime_type: "image/jpeg", base64: c.toDataURL("image/jpeg", 0.85).split(",")[1] });
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+function renderPreviews() {
+  const box = $("#previews");
+  box.innerHTML = "";
+  pending.forEach((p, i) => {
+    const d = el("div", "preview", `<img src="data:${p.mime_type};base64,${p.base64}" alt="Photo to send"><button type="button" aria-label="Remove photo">×</button>`);
+    d.querySelector("button").onclick = () => { pending.splice(i, 1); renderPreviews(); };
+    box.append(d);
+  });
+}
+
+// ── empty state / new chat ──
+function showEmpty() {
+  thread.innerHTML = "";
+  const e = el("div", "empty", `<h1>What are you shopping for?</h1><p>Describe it, paste product links to compare, or add a photo.</p><div class="chips"></div>`);
+  for (const ex of EXAMPLES) {
+    const b = el("button", "chip", esc(ex));
+    b.type = "button";
+    b.onclick = () => (ex.startsWith("Compare") ? (input.value = "Which of these is better?\n", input.focus(), autosize()) : send(ex));
+    e.querySelector(".chips").append(b);
+  }
+  thread.append(e);
+}
+function clearEmpty() { const e = thread.querySelector(".empty"); if (e) e.remove(); }
+$("#newChat").onclick = () => { if (busy) controller?.abort(); conversationId = null; pending = []; renderPreviews(); showEmpty(); input.focus(); };
+
+showEmpty();
+input.focus();
+</script>
+</body>
+</html>

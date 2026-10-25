@@ -1,8 +1,11 @@
-# Product Discovery: store connectors
+# Olykook: AI shopping assistant
 
-This is the backend for a product discovery and comparison app. It searches several stores at once,
-reads any product link a user pastes, and finds products from a photo. Every store's data is converted
-to one `Product` shape, so the AI chat layer can compare items without caring where they came from.
+Chat with an AI that finds and compares products from stores across the internet. Shoppers can describe
+what they want, paste product links to compare, or upload a photo. The assistant (Claude) searches the
+connected stores, reads the links, compares price, ratings and specs, and shows its top picks as cards.
+
+Under the hood: one connector per store, all converted to a single `Product` shape, plus a page reader
+for links from any other store.
 
 ## What's connected
 
@@ -49,8 +52,8 @@ they publish for Google. When a store shows a bot check, the API says so plainly
 ```bash
 npm install
 cp .env.example .env      # add the keys you have; everything is optional
-npm run dev               # http://localhost:3000 opens a test page
-npm test                  # 60 tests, no keys or network needed
+npm run dev               # http://localhost:3000 = chat,  /playground = API test page
+npm test                  # 71 tests, no keys or network needed
 npm run search -- "wireless earbuds"                     # check your keys from the terminal
 npm run search -- https://www.amazon.com/dp/B0BX2L8PBT   # read pasted links
 ```
@@ -62,12 +65,32 @@ npm run search -- https://www.amazon.com/dp/B0BX2L8PBT   # read pasted links
 2. **SerpApi**: one key adds Google Shopping plus Amazon and Walmart results right away.
 3. **AliExpress** and **Walmart** affiliate programs: free, approval takes a few days.
 4. **Amazon Associates**: apply early. Creators API access opens only after your site makes qualifying sales.
-5. **Anthropic**: makes photo search work on every store.
+5. **Anthropic** (required for the chat): https://console.anthropic.com → API key → `ANTHROPIC_API_KEY`.
+
+## The chat
+
+`http://localhost:3000` is the chat. It needs `ANTHROPIC_API_KEY`; everything else is optional.
+
+How it works (`src/chat/`):
+- **`agent.ts`**: sends the conversation to Claude (`claude-opus-5-5`), streams the reply, runs the tools
+  Claude asks for, and loops until it answers (max 8 tool rounds per message). If the main model declines a
+  request, Anthropic automatically retries on its recommended fallback model.
+- **`tools.ts`**: the four tools Claude can use: `search_products`, `read_product_links`, `search_by_photo`,
+  and `show_recommendations` (the highlighted "Top picks" cards). Tool inputs are validated before running,
+  and Claude can only recommend products a tool actually returned.
+- **`prompt.ts`**: the assistant's instructions (ground every claim in real results, weigh ratings by review
+  count, keep replies short because the cards show the details).
+- **`store.ts`**: conversations live in memory for 2 hours. Move them to Redis or a database before running
+  more than one server.
+
+Cost: each message is one or more Claude calls. The instructions and earlier messages are cached, so
+follow-up messages in a chat cost less. The server logs token usage per call (`[chat] … cache_read=…`).
 
 ## API
 
 | Endpoint | What it does |
 |---|---|
+| `POST /api/chat` `{conversation_id?, message, photos?: [{base64, mime_type}]}` | One chat turn, streamed as Server-Sent Events (`conversation`, `text`, `tool_start`, `products`, `recommendations`, `tool_end`, `done` / `error`) |
 | `GET /api/search?q=…&max_price=&min_price=&sort=relevance\|price_asc\|price_desc\|rating&sources=amazon,ebay&limit=` | Searches all connected stores in parallel |
 | `POST /api/resolve` `{"urls": [...]}` | Reads up to 10 pasted product links |
 | `POST /api/search/image` (multipart `image`, optional `hint`, `image_url`) | Finds products from a photo |
@@ -81,20 +104,21 @@ sold by several stores, cheapest first. That's the core data for price compariso
 
 ```
 src/
+  chat/                 AI chat: agent loop, tools, instructions, conversation store
   types.ts              Product shape shared by everything
   providers/            One file per store (search, link lookup, image search)
   scrape/               Safe page fetching + product data extraction for pasted links
   services/             Multi-store search, link resolution, photo search
   ai/describeImage.ts   Claude turns a photo into a search query
   server.ts             HTTP API
-public/index.html       Test page
+public/chat.html        Chat interface
+public/playground.html  API test page
 ```
 
 To add a store, write a `Provider` in `src/providers/` and add it to `src/providers/index.ts`.
 
 ## Next steps
 
-- **Chat layer:** give Claude the three endpoints as tools (search, read links, photo search) so it can
-  compare products and recommend alternatives in conversation.
+- **Accounts and saved chats:** chats live in server memory today and disappear on restart.
 - **Shared cache:** results are cached in memory for 10 minutes. Use Redis once you run more than one server.
 - **Rate limits:** add per-user limits before going public. SerpApi and Anthropic calls cost money.

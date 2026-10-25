@@ -2,10 +2,13 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
+import { streamSSE } from "hono/streaming";
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { config } from "./config.js";
 import { visionConfigured } from "./ai/describeImage.js";
+import { chatConfigured, runChatTurn } from "./chat/agent.js";
+import { createConversation, getConversation, touch } from "./chat/store.js";
 import { providers } from "./providers/index.js";
 import { searchByImage } from "./services/imageSearch.js";
 import { resolveUrls } from "./services/resolveUrl.js";
@@ -41,6 +44,7 @@ app.get("/api/providers", (c) =>
   c.json({
     providers: providers.map((p) => ({ id: p.id, name: p.name, configured: p.isConfigured(), imageSearch: Boolean(p.searchByImage), setup: p.setup })),
     imageDescription: { configured: visionConfigured(), setup: "Set ANTHROPIC_API_KEY to enable photo → search on every store." },
+    chat: { configured: chatConfigured(), setup: "Set ANTHROPIC_API_KEY to enable the AI chat." },
   }),
 );
 
@@ -98,8 +102,54 @@ app.post("/api/search/image", bodyLimit({ maxSize: 8 * 1024 * 1024, onError: (c)
   return c.json(result);
 });
 
-const playground = () => readFileSync(new URL("../public/index.html", import.meta.url), "utf8");
-app.get("/", (c) => c.html(playground()));
+const ChatBody = z.object({
+  conversation_id: z.string().uuid().optional(),
+  message: z.string().max(4000).default(""),
+  photos: z
+    .array(z.object({ base64: z.string().min(10), mime_type: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]) }))
+    .max(3)
+    .default([]),
+});
+
+/**
+ * POST /api/chat  { conversation_id?, message, photos?: [{ base64, mime_type }] }
+ * Replies with a Server-Sent Events stream: conversation, text, tool_start, products,
+ * recommendations, tool_end, done | error. See src/chat/agent.ts for event shapes.
+ */
+app.post("/api/chat", bodyLimit({ maxSize: 16 * 1024 * 1024, onError: (c) => c.json({ error: "Photos too large (max 5 MB each)" }, 413) }), async (c) => {
+  if (!chatConfigured()) return c.json({ error: "Chat needs an Anthropic API key. Set ANTHROPIC_API_KEY in .env and restart." }, 503);
+  const parsed = ChatBody.safeParse(await c.req.json().catch(() => ({})));
+  if (!parsed.success) return c.json(badRequest(parsed.error), 400);
+  const { conversation_id, message, photos } = parsed.data;
+  if (!message.trim() && !photos.length) return c.json({ error: "Type a message or add a photo" }, 400);
+  for (const p of photos) {
+    if (Buffer.byteLength(p.base64, "base64") > 5 * 1024 * 1024) return c.json({ error: "Photos must be under 5 MB each" }, 413);
+  }
+
+  let convo = getConversation(conversation_id);
+  if (conversation_id && !convo) return c.json({ error: "This chat expired. Start a new one.", code: "expired" }, 404);
+  convo ??= createConversation();
+  if (convo.busy) return c.json({ error: "Still answering your last message" }, 409);
+  convo.busy = true;
+  const active = convo;
+
+  return streamSSE(c, async (stream) => {
+    const abort = new AbortController();
+    stream.onAbort(() => abort.abort());
+    const send = (data: unknown) => stream.writeSSE({ data: JSON.stringify(data) });
+    try {
+      await send({ type: "conversation", id: active.id });
+      await runChatTurn(active, { text: message, photos: photos.map((p) => ({ base64: p.base64, mimeType: p.mime_type })) }, send, abort.signal);
+    } finally {
+      active.busy = false;
+      touch(active);
+    }
+  });
+});
+
+const page = (file: string) => readFileSync(new URL(`../public/${file}`, import.meta.url), "utf8");
+app.get("/", (c) => c.html(page("chat.html")));
+app.get("/playground", (c) => c.html(page("playground.html")));
 
 app.onError((err, c) => {
   console.error(err);
@@ -109,7 +159,8 @@ app.onError((err, c) => {
 if (import.meta.url === `file://${process.argv[1]}`) {
   const configured = providers.filter((p) => p.isConfigured()).map((p) => p.name);
   serve({ fetch: app.fetch, port: config.port }, (info) => {
-    console.log(`Product discovery API on http://localhost:${info.port}`);
+    console.log(`Olykook running: chat at http://localhost:${info.port}  ·  API test page at http://localhost:${info.port}/playground`);
+    if (!chatConfigured()) console.log("AI chat is off until you set ANTHROPIC_API_KEY in .env.");
     console.log(configured.length ? `Connected stores: ${configured.join(", ")}` : "No store APIs configured yet. Copy .env.example to .env and add keys.");
     console.log("Pasted links work without any keys (read from the product page).");
   });
