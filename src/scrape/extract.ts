@@ -9,9 +9,13 @@
 import * as cheerio from "cheerio";
 import type { CheerioAPI } from "cheerio";
 import { compact, guessCurrency, parsePrice, toNumber } from "../lib/http.js";
+import { asinFromUrl } from "../providers/amazon.js";
 import type { Money, Product, SourceId } from "../types.js";
 
+/** The store showed a bot check instead of the page. */
 export class BlockedPageError extends Error {}
+/** The page loaded but isn't a single product (category page, removed item, home page…). */
+export class NotAProductError extends Error {}
 
 const STORE_NAMES: [RegExp, SourceId, string][] = [
   [/(^|\.)amazon\./, "amazon", "Amazon"],
@@ -124,13 +128,76 @@ function fromMeta($: CheerioAPI): Partial<Product> {
   });
 }
 
+/** Read the JSON object literal that starts at `start` (balanced braces, string-aware). */
+function readJsonObject(src: string, start: number): unknown {
+  let depth = 0;
+  let inString = false;
+  for (let i = start; i < src.length; i++) {
+    const c = src[i];
+    if (inString) {
+      if (c === "\\") i++;
+      else if (c === '"') inString = false;
+    } else if (c === '"') inString = true;
+    else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) return JSON.parse(src.slice(start, i + 1));
+  }
+  return undefined;
+}
+
+/**
+ * Shopify stores (millions of them) always include product analytics data,
+ * `var meta = {"product":{"vendor":…,"variants":[{"id":…,"price":15900}]}}`, with prices in cents.
+ * Used when a store doesn't publish standard product data.
+ */
+function fromShopify(html: string, pageUrl: URL): Partial<Product> {
+  const at = html.indexOf('var meta = {"product"');
+  if (at < 0) return {};
+  try {
+    const meta = readJsonObject(html, html.indexOf("{", at)) as any;
+    const product = meta?.product;
+    const variants: any[] = product?.variants ?? [];
+    if (!variants.length) return {};
+    const wanted = pageUrl.searchParams.get("variant");
+    const variant = variants.find((v) => String(v.id) === wanted) ?? variants.reduce((a, b) => (b.price < a.price ? b : a));
+    const currency =
+      html.match(/Shopify\.currency\s*=\s*\{"active":"([A-Z]{3})"/)?.[1] ??
+      html.match(/ShopifyAnalytics\.meta\.currency\s*=\s*'([A-Z]{3})'/)?.[1] ??
+      "USD";
+    return compact({
+      price: typeof variant.price === "number" ? { amount: variant.price / 100, currency } : undefined,
+      brand: product.vendor,
+      identifiers: compact({ sku: variant.sku || undefined }),
+      specs: variants.length > 1 ? { Options: `${variants.length} variants (price shown: ${variant.public_title ?? variant.name ?? "cheapest"})` } : undefined,
+    });
+  } catch {
+    return {};
+  }
+}
+
+/** Visible text of an element, ignoring any <script>/<style> inside it. */
+function cleanText($: CheerioAPI, selector: string): string {
+  const el = $(selector).first().clone();
+  el.find("script, style, noscript").remove();
+  return el.text().replace(/\s+/g, " ").trim();
+}
+
+/** Amazon moves its price around between page layouts; take the first one that parses. */
+const AMAZON_PRICE_SELECTORS = [
+  "#corePrice_feature_div .a-offscreen",
+  "#corePriceDisplay_desktop_feature_div .a-offscreen",
+  "#apex_offerDisplay_desktop .a-offscreen",
+  "#corePrice_desktop .a-offscreen",
+  ".apex-pricetopay-value .a-offscreen",
+  ".priceToPay .aok-offscreen",
+  ".priceToPay .a-offscreen",
+  "#priceblock_ourprice",
+  "#priceblock_dealprice",
+];
+
 /** Amazon doesn't publish JSON-LD, so read its page elements directly. */
 function fromAmazon($: CheerioAPI): Partial<Product> {
   const priceText =
-    $("#corePrice_feature_div .a-offscreen").first().text() ||
-    $("#corePriceDisplay_desktop_feature_div .a-offscreen").first().text() ||
-    $(".priceToPay .a-offscreen").first().text() ||
-    $("#priceblock_ourprice, #priceblock_dealprice").first().text();
+    AMAZON_PRICE_SELECTORS.map((sel) => $(sel).first().text().trim()).find((t) => parsePrice(t) !== undefined) ?? "";
   const listText = $(".basisPrice .a-offscreen").first().text();
   const img = $("#landingImage").attr("data-old-hires") || $("#landingImage").attr("src") || $("#imgBlkFront").attr("src");
   const ratingText = $("#acrPopover").attr("title") || $('[data-hook="rating-out-of-text"]').text();
@@ -151,7 +218,7 @@ function fromAmazon($: CheerioAPI): Partial<Product> {
     rating: parsePrice(ratingText),
     reviewCount: parsePrice(countText),
     brand: $("#bylineInfo").text().replace(/^(Visit the|Brand:)\s*/i, "").replace(/\s*Store$/i, "").trim(),
-    availability: $("#availability").text().replace(/\s+/g, " ").trim(),
+    availability: cleanText($, "#availability").replace(/\.\s.*$/, "") || undefined,
     features: $("#feature-bullets li span.a-list-item")
       .map((_, el) => $(el).text().trim())
       .get()
@@ -160,10 +227,34 @@ function fromAmazon($: CheerioAPI): Partial<Product> {
   });
 }
 
-function looksBlocked($: CheerioAPI, html: string): boolean {
+export function looksBlocked($: CheerioAPI, html: string, pageUrl: URL): boolean {
+  // Stores often redirect blocked visitors to a dedicated page.
+  if (/\/(blocked|captcha|punish)\b|_____tmd_____/i.test(pageUrl.pathname)) return true;
   if ($('form[action*="validateCaptcha"]').length) return true;
-  if (/captcha|robot check|access denied|are you a human|unusual traffic|px-captcha|cf-chl/i.test($("title").text())) return true;
-  return html.length < 1500 && /captcha|verify you are human/i.test(html);
+  if (/captcha|robot check|robot or human|access denied|are you a human|unusual traffic|just a moment|attention required/i.test($("title").text())) return true;
+  // Amazon's "Click the button below to continue shopping" wall and AliExpress's slider captcha.
+  if (/To discuss automated access to Amazon data|_____tmd_____\/punish|"action":"captcha"/.test(html)) return true;
+  return html.length < 20_000 && /px-captcha|cf-chl|verify you are human/i.test(html);
+}
+
+/** Does the page describe one product, rather than a category, search or home page? */
+function isProductPage($: CheerioAPI, jsonLd: unknown, amazon: Partial<Product>): boolean {
+  if (jsonLd || amazon.title) return true;
+  const ogType = ($('meta[property="og:type"]').attr("content") ?? "").toLowerCase();
+  if (ogType === "product" || ogType === "og:product" || ogType === "product.item") return true;
+  return Boolean($('meta[property="product:price:amount"], meta[property="og:price:amount"], [itemprop="price"]').length);
+}
+
+const ENTITIES: Record<string, string> = { amp: "&", quot: '"', apos: "'", lt: "<", gt: ">", nbsp: " " };
+
+/** Some stores HTML-escape text inside their JSON data, e.g. `5&quot; Shorts`. */
+export function decodeEntities(s: string | undefined): string | undefined {
+  if (!s) return s;
+  return s
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&(amp|quot|apos|lt|gt|nbsp);/g, (_, n) => ENTITIES[n])
+    .trim();
 }
 
 /** Merge: earlier sources win, later ones only fill gaps. */
@@ -175,32 +266,43 @@ function merge(...parts: Partial<Product>[]): Partial<Product> {
 
 export function extractProduct(html: string, pageUrl: URL): Product {
   const $ = cheerio.load(html);
-  if (looksBlocked($, html)) throw new BlockedPageError(`${pageUrl.hostname} showed a bot check instead of the product page`);
+  if (looksBlocked($, html, pageUrl)) throw new BlockedPageError(`${pageUrl.hostname} showed a bot check instead of the product page`);
 
   const { source, store } = storeForHost(pageUrl.hostname);
   const jsonLd = findJsonLdProduct($);
-  const merged = merge(
-    source === "amazon" ? fromAmazon($) : {},
-    jsonLd ? fromJsonLd(jsonLd) : {},
-    fromMeta($),
-  );
+  const amazon = source === "amazon" ? fromAmazon($) : {};
+  if (!isProductPage($, jsonLd, amazon)) {
+    throw new NotAProductError("That link doesn't open a single product page (it may have been removed, or it's a category page)");
+  }
+  const merged = merge(amazon, jsonLd ? fromJsonLd(jsonLd) : {}, fromMeta($), fromShopify(html, pageUrl));
+  if (!merged.title) throw new NotAProductError("Couldn't find product details on that page");
 
-  if (!merged.title) throw new Error("Couldn't find product details on that page");
   const abs = (u?: string) => (u ? new URL(u, pageUrl).href : undefined);
-  const canonical = $('link[rel="canonical"]').attr("href");
-  const url = abs(canonical) ?? pageUrl.href;
+  // Amazon: the product code (ASIN) is the stable id, and /dp/ASIN is the clean link.
+  // Its canonical tag can point at odd pages (/clp/…) or a different model, so ignore it.
+  const asin = source === "amazon" ? asinFromUrl(pageUrl) : undefined;
+  const canonical = abs($('link[rel="canonical"]').attr("href"));
+  const url = asin
+    ? `https://${pageUrl.hostname}/dp/${asin}`
+    : canonical && new URL(canonical).hostname === pageUrl.hostname
+      ? canonical
+      : pageUrl.href;
+  const sourceId = asin ?? url;
 
   return compact({
     ...merged,
-    id: `${source}:${url}`,
+    identifiers: asin ? { ...merged.identifiers, asin } : merged.identifiers,
+    id: `${source}:${sourceId}`,
     source,
-    sourceId: url,
+    sourceId,
     store,
-    title: merged.title,
+    title: decodeEntities(merged.title),
+    brand: decodeEntities(merged.brand),
+    features: merged.features?.map((f) => decodeEntities(f)!),
     url,
     imageUrl: abs(merged.imageUrl),
     images: merged.images?.map((i) => abs(i)!).filter(Boolean),
-    description: merged.description?.slice(0, 1500),
+    description: decodeEntities(merged.description)?.slice(0, 1500),
     via: "page",
   } as Product);
 }

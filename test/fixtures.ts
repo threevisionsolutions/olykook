@@ -41,3 +41,31 @@ export const OG_ONLY_PAGE = `<html><head>
 
 export const CAPTCHA_PAGE = `<html><head><title>Robot Check</title></head><body>
 <form action="/errors/validateCaptcha"><input name="field-keywords"></form></body></html>`;
+
+/** Patterns seen on live pages (Oct 2026), trimmed. */
+export const AMAZON_LIVE_PAGE = `<html><head><title>Amazon.com: Apple AirPods Pro 2</title>
+<link rel="canonical" href="https://www.amazon.com/clp/B0CHWRXH8B"/></head><body>
+<span id="productTitle">Apple AirPods Pro (2nd Generation)</span>
+<div id="corePriceDisplay_desktop_feature_div"><span class="a-price"><span class="a-offscreen"> </span></span></div>
+<div id="apex_offerDisplay_desktop"><span class="a-price"><span class="a-offscreen">$263.86</span></span></div>
+<div id="availability"><span>In Stock</span><script>P.when("A").execute(function(){ var x = {"isRobot":false}; });</script></div>
+</body></html>`;
+
+export const AMAZON_UNAVAILABLE_PAGE = `<html><body><span id="productTitle">Echo Dot (4th Gen)</span>
+<div id="availability"><span>Currently unavailable.</span><span> We don't know when or if this item will be back in stock.</span></div>
+</body></html>`;
+
+export const AMAZON_CONTINUE_WALL = `<html><head><title dir="ltr">Amazon.com</title></head><body>
+<!-- To discuss automated access to Amazon data please contact api-services-support@amazon.com. -->
+<h4>Click the button below to continue shopping</h4></body></html>`;
+
+export const ALIEXPRESS_CAPTCHA = `<script>var url = window.location.protocol + "//www.aliexpress.com//item/1.html/_____tmd_____/punish?x5secdata=abc";window._config_ = {"action":"captcha"};</script>`;
+
+export const WALMART_BLOCKED = `<html><head><title>Robot or human?</title></head><body><div id="px-captcha"></div>${"<p>filler</p>".repeat(800)}</body></html>`;
+
+export const CATEGORY_PAGE = `<html><head><title>Products - IKEA</title>
+<meta property="og:type" content="product.group"/><meta property="og:title" content="Products"/></head><body></body></html>`;
+
+export const SHOPIFY_META_ONLY_PAGE = `<html><head><meta property="og:type" content="product"/><meta property="og:title" content="Classic Percale Core Sheet Set"/>
+<script>var meta = {"product":{"id":7296487424090,"vendor":"Brooklinen","variants":[{"id":111,"price":18900,"name":"King","public_title":"King","sku":"K-1"},{"id":222,"price":15900,"name":"Queen","public_title":"Queen","sku":"Q-1"}]},"page":{"pageType":"product"}};
+Shopify.currency = {"active":"USD","rate":"1.0"};</script></head><body></body></html>`;

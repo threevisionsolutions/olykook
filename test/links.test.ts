@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BlockedPageError, extractProduct } from "../src/scrape/extract.js";
+import { BlockedPageError, extractProduct, NotAProductError } from "../src/scrape/extract.js";
 import { assertPublicUrl, isPrivateAddress } from "../src/scrape/fetchPage.js";
 import { normalizeUrl, resolveUrl } from "../src/services/resolveUrl.js";
 import type { Product, Provider } from "../src/types.js";
-import { AMAZON_PAGE, CAPTCHA_PAGE, OG_ONLY_PAGE, SHOPIFY_PAGE } from "./fixtures.js";
+import {
+  ALIEXPRESS_CAPTCHA, AMAZON_CONTINUE_WALL, AMAZON_LIVE_PAGE, AMAZON_PAGE, AMAZON_UNAVAILABLE_PAGE, CAPTCHA_PAGE,
+  CATEGORY_PAGE, OG_ONLY_PAGE, SHOPIFY_META_ONLY_PAGE, SHOPIFY_PAGE, WALMART_BLOCKED,
+} from "./fixtures.js";
 import { clearEnv } from "./helpers.js";
 
 beforeEach(clearEnv);
@@ -54,6 +57,48 @@ describe("reading product pages", () => {
 
   it("recognises bot-check pages instead of returning junk", () => {
     expect(() => extractProduct(CAPTCHA_PAGE, new URL("https://www.amazon.com/dp/B07QXV6N1B"))).toThrow(BlockedPageError);
+  });
+});
+
+describe("live-page cases", () => {
+  it("Amazon: finds the price in the newer layout, ignores script text, and keeps a clean /dp/ link", () => {
+    const p = extractProduct(AMAZON_LIVE_PAGE, new URL("https://www.amazon.com/Apple-AirPods/dp/B0CHWRXH8B"));
+    expect(p).toMatchObject({
+      id: "amazon:B0CHWRXH8B",
+      sourceId: "B0CHWRXH8B",
+      url: "https://www.amazon.com/dp/B0CHWRXH8B",
+      price: { amount: 263.86, currency: "USD" },
+      availability: "In Stock",
+      identifiers: { asin: "B0CHWRXH8B" },
+    });
+  });
+
+  it("Amazon: reports items with no seller as unavailable", () => {
+    const p = extractProduct(AMAZON_UNAVAILABLE_PAGE, new URL("https://www.amazon.com/dp/B07XJ8C8F5"));
+    expect(p.price).toBeUndefined();
+    expect(p.availability).toBe("Currently unavailable");
+  });
+
+  it("recognises the bot walls Amazon, AliExpress and Walmart show to servers", () => {
+    expect(() => extractProduct(AMAZON_CONTINUE_WALL, new URL("https://www.amazon.com/dp/B0CHWRXH8B"))).toThrow(BlockedPageError);
+    expect(() => extractProduct(ALIEXPRESS_CAPTCHA, new URL("https://www.aliexpress.com/item/1.html"))).toThrow(BlockedPageError);
+    expect(() => extractProduct(WALMART_BLOCKED, new URL("https://www.walmart.com/blocked?url=abc"))).toThrow(BlockedPageError);
+  });
+
+  it("reads Shopify's built-in product data when there's no JSON-LD (cheapest variant, or the one in the link)", () => {
+    const cheapest = extractProduct(SHOPIFY_META_ONLY_PAGE, new URL("https://www.brooklinen.com/products/classic-core-sheet-set"));
+    expect(cheapest).toMatchObject({ title: "Classic Percale Core Sheet Set", brand: "Brooklinen", price: { amount: 159, currency: "USD" } });
+    const king = extractProduct(SHOPIFY_META_ONLY_PAGE, new URL("https://www.brooklinen.com/products/classic-core-sheet-set?variant=111"));
+    expect(king.price?.amount).toBe(189);
+  });
+
+  it("decodes HTML entities that stores leave in their product data", () => {
+    const html = `<script type="application/ld+json">{"@type":"Product","name":"Arrival 5&quot; Shorts &amp; Tee","offers":{"price":"26","priceCurrency":"USD"}}</script>`;
+    expect(extractProduct(html, new URL("https://www.gymshark.com/products/x")).title).toBe('Arrival 5" Shorts & Tee');
+  });
+
+  it("refuses category pages instead of calling them products", () => {
+    expect(() => extractProduct(CATEGORY_PAGE, new URL("https://www.ikea.com/us/en/cat/products-products/"))).toThrow(NotAProductError);
   });
 });
 

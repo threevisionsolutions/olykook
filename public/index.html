@@ -81,7 +81,7 @@ function card(p) {
     <div class="b"><span class="muted">${esc(p.store)}${p.via === "page" ? " · read from page" : ""}</span>
     <a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener">${esc(p.title)}</a>
     <span class="price">${fmt(p.price)} ${p.originalPrice ? `<s class="muted">${fmt(p.originalPrice)}</s>` : ""}</span>
-    <span class="muted">${p.rating ? `★ ${p.rating}` : ""}${p.reviewCount ? ` (${p.reviewCount.toLocaleString()})` : ""}${p.condition ? ` · ${esc(p.condition)}` : ""}</span></div></div>`;
+    <span class="muted">${[p.rating ? `★ ${p.rating}${p.reviewCount ? ` (${p.reviewCount.toLocaleString()})` : ""}` : "", esc(p.condition), esc(p.availability)].filter(Boolean).join(" · ")}</span></div></div>`;
 }
 function showReports(reports = [], extra = "") {
   $("#status").innerHTML = extra + reports.map((r) => `<span class="pill ${r.status}" title="${esc(r.error || "")}">${esc(r.provider)}: ${r.status === "ok" ? `${r.count} in ${r.ms}ms` : esc(r.status)}</span>`).join("");
@@ -98,7 +98,9 @@ $("#search").onsubmit = async (e) => {
   const params = new URLSearchParams([...new FormData(e.target)].filter(([, v]) => v));
   const data = await call(`/api/search?${params}`); if (!data) return;
   showReports(data.providers);
-  $("#out").innerHTML = data.products.map(card).join("") || `<p class="muted">No results. Check "Connected stores".</p>`;
+  const noneConnected = data.providers.every((r) => r.status === "skipped");
+  $("#out").innerHTML = data.products.map(card).join("") ||
+    `<p class="muted">${noneConnected ? 'No stores are connected yet. Add API keys to your .env file (see the "Connected stores" tab).' : "No results."}</p>`;
 };
 $("#links").onsubmit = async (e) => {
   e.preventDefault();

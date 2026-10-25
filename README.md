@@ -35,7 +35,7 @@ they publish for Google. When a store shows a bot check, the API says so plainly
 npm install
 cp .env.example .env      # add the keys you have; everything is optional
 npm run dev               # http://localhost:3000 opens a test page
-npm test                  # 43 tests, no keys or network needed
+npm test                  # 49 tests, no keys or network needed
 npm run search -- "wireless earbuds"                     # check your keys from the terminal
 npm run search -- https://www.amazon.com/dp/B0BX2L8PBT   # read pasted links
 ```

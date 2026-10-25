@@ -15,6 +15,7 @@ if (!args.length) {
 const money = (m?: { amount: number; currency: string }) => (m ? `${m.currency} ${m.amount.toFixed(2)}` : "no price");
 
 if (args.every((a) => /^https?:\/\/|^www\./i.test(a))) {
+  if (args.length > 10) console.log(`Note: only the first 10 links are read at a time (you gave ${args.length}).\n`);
   for (const r of await resolveUrls(args)) {
     if (r.error) console.log(`✗ ${r.input}\n  ${r.error}`);
     else console.log(`✓ [${r.product!.store}, via ${r.product!.via}] ${r.product!.title}\n  ${money(r.product!.price)}  ${r.product!.url}`);

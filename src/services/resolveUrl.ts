@@ -7,7 +7,8 @@
  */
 import { TtlCache } from "../lib/cache.js";
 import { providers as allProviders } from "../providers/index.js";
-import { BlockedPageError, extractProduct } from "../scrape/extract.js";
+import { HttpError } from "../lib/http.js";
+import { BlockedPageError, extractProduct, NotAProductError } from "../scrape/extract.js";
 import { BlockedUrlError, fetchPage } from "../scrape/fetchPage.js";
 import type { Product, Provider } from "../types.js";
 
@@ -92,9 +93,20 @@ export async function resolveUrl(raw: string, opts: ResolveOptions = {}): Promis
 function friendlyError(err: unknown): string {
   if (err instanceof BlockedUrlError) return "That link points to a private address and can't be opened";
   if (err instanceof BlockedPageError) return `${err.message}. Try again later, or add that store's API key.`;
+  if (err instanceof NotAProductError) return err.message;
+  if (err instanceof HttpError) {
+    const host = new URL(err.url).hostname.replace(/^www\./, "");
+    if (err.status === 404 || err.status === 410) return "That product page wasn't found (it may have been removed)";
+    if (err.status === 403 || err.status === 429 || err.status === 503) {
+      return `${host} blocks automatic page reading. Add that store's API key, or try again later.`;
+    }
+    return `${host} returned an error (HTTP ${err.status})`;
+  }
   if (err instanceof Error && err.name === "TimeoutError") return "The store took too long to respond";
   const code = (err as any)?.code ?? (err as any)?.cause?.code;
   if (code === "ENOTFOUND" || code === "ECONNREFUSED" || code === "ECONNRESET") return "Couldn't reach that website";
+  // Node reports dropped connections as a bare "fetch failed".
+  if (err instanceof TypeError && err.message === "fetch failed") return "Couldn't load that page (the store closed the connection)";
   return err instanceof Error ? err.message : String(err);
 }
 
