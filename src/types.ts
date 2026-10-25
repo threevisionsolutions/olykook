@@ -11,6 +11,7 @@ export type SourceId =
   | "bestbuy"
   | "etsy"
   | "google_shopping"
+  | "shopify" // Shopify Global Catalog: every Shopify store, no key needed
   | "web"; // any other site, read from the page itself
 
 export interface Money {
@@ -26,6 +27,8 @@ export interface ProductIdentifiers {
   mpn?: string;
   model?: string;
   sku?: string;
+  /** Shopify's Universal Product ID: the same product across different Shopify stores. */
+  upid?: string;
 }
 
 export interface Product {

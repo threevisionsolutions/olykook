@@ -6,8 +6,13 @@ to one `Product` shape, so the AI chat layer can compare items without caring wh
 
 ## What's connected
 
+**Works with zero setup:** search, photo search and pasted links all work out of the box, through Shopify's
+Global Catalog (every Shopify store) and the page reader (any store's product page). The keys below add
+the big marketplaces on top.
+
 | Store | How | Cost | Search | Pasted links | Photo search |
 |---|---|---|---|---|---|
+| **Every Shopify store** (millions of brands: Allbirds, Skullcandy, Stanley, Brooklinen, Fleet Feet…) | Shopify Global Catalog | **Free, no key** (optional free key for guaranteed speed) | ✅ | ✅ | ✅ native visual search |
 | **eBay** | Official Browse API | Free | ✅ | ✅ | ✅ native visual search |
 | **Amazon** | Official Creators API (replaced PA-API 5) | Free, but needs Associates approval and sales | ✅ | ✅ | via Claude |
 | ↳ until approved | SerpApi's Amazon search | Free quota, then paid | ✅ | page reader | via Claude |
@@ -20,6 +25,16 @@ to one `Product` shape, so the AI chat layer can compare items without caring wh
 
 **Alibaba.com** has no public product-search API. Its consumer marketplace, AliExpress, is covered through
 the official API, and pasted alibaba.com links are read from the page.
+
+### About the Shopify Global Catalog
+
+Shopify built it for AI shopping assistants: one search across all Shopify merchants, with prices,
+ratings, stock, specs, sale prices and photo search. Without a key, requests share Shopify's anonymous
+lane, which is fine for building and testing but has no guaranteed speed. Before launch, get the free key
+(dev.shopify.com/dashboard → Catalogs → Get an API key) for 5 searches/second, and host your own
+[agent profile](https://shopify.dev/docs/agents/get-started/profile) JSON at a public URL
+(`SHOPIFY_AGENT_PROFILE_URL`). It only covers Shopify stores, so Amazon, Walmart, eBay and the like
+still come from their own APIs.
 
 ### Why official APIs instead of scraping
 
@@ -35,13 +50,14 @@ they publish for Google. When a store shows a bot check, the API says so plainly
 npm install
 cp .env.example .env      # add the keys you have; everything is optional
 npm run dev               # http://localhost:3000 opens a test page
-npm test                  # 49 tests, no keys or network needed
+npm test                  # 60 tests, no keys or network needed
 npm run search -- "wireless earbuds"                     # check your keys from the terminal
 npm run search -- https://www.amazon.com/dp/B0BX2L8PBT   # read pasted links
 ```
 
 ### Suggested signup order
 
+0. **Nothing.** Shopify stores and pasted links work immediately.
 1. **eBay**, **Best Buy**, **Etsy**: free, instant keys. Good coverage on day one.
 2. **SerpApi**: one key adds Google Shopping plus Amazon and Walmart results right away.
 3. **AliExpress** and **Walmart** affiliate programs: free, approval takes a few days.

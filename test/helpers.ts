@@ -48,4 +48,6 @@ export const ALL_KEYS = [
 
 export function clearEnv() {
   setEnv(Object.fromEntries(ALL_KEYS.map((k) => [k, undefined])));
+  // Shopify's catalog needs no key, so it would join every test's search; tests opt in explicitly.
+  setEnv({ SHOPIFY_CATALOG_DISABLED: "true" });
 }

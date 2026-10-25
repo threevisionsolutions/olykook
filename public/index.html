@@ -83,8 +83,10 @@ function card(p) {
     <span class="price">${fmt(p.price)} ${p.originalPrice ? `<s class="muted">${fmt(p.originalPrice)}</s>` : ""}</span>
     <span class="muted">${[p.rating ? `★ ${p.rating}${p.reviewCount ? ` (${p.reviewCount.toLocaleString()})` : ""}` : "", esc(p.condition), esc(p.availability)].filter(Boolean).join(" · ")}</span></div></div>`;
 }
+const LABELS = { web: "AI photo description", google_shopping: "Google Shopping", shopify: "Shopify stores", bestbuy: "Best Buy", aliexpress: "AliExpress", ebay: "eBay" };
+const label = (id) => LABELS[id] || id.charAt(0).toUpperCase() + id.slice(1);
 function showReports(reports = [], extra = "") {
-  $("#status").innerHTML = extra + reports.map((r) => `<span class="pill ${r.status}" title="${esc(r.error || "")}">${esc(r.provider)}: ${r.status === "ok" ? `${r.count} in ${r.ms}ms` : esc(r.status)}</span>`).join("");
+  $("#status").innerHTML = extra + reports.map((r) => `<span class="pill ${r.status}" title="${esc(r.error || "")}">${esc(label(r.provider))}: ${r.status === "ok" ? `${r.count} in ${r.ms}ms` : r.status === "skipped" ? "not set up" : "error"}</span>`).join("");
 }
 async function call(url, opts) {
   $("#status").textContent = "Loading…"; $("#out").innerHTML = "";

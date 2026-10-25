@@ -90,10 +90,17 @@ export function barcodeKey(p: Product): string | undefined {
   return digits.padStart(14, "0");
 }
 
+/** Barcode, or Shopify's cross-store product id. */
+function sameProductKey(p: Product): string | undefined {
+  const barcode = barcodeKey(p);
+  if (barcode) return barcode;
+  return p.identifiers?.upid ? `upid:${p.identifiers.upid}` : undefined;
+}
+
 export function groupSameProduct(products: Product[]): SearchResult["sameProductGroups"] {
   const groups = new Map<string, Product[]>();
   for (const p of products) {
-    const key = barcodeKey(p);
+    const key = sameProductKey(p);
     if (!key) continue;
     groups.set(key, [...(groups.get(key) ?? []), p]);
   }

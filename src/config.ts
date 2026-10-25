@@ -73,6 +73,17 @@ export const config = {
     get apiKey() { return env("SERPAPI_API_KEY"); },
   },
 
+  shopify: {
+    /** Optional. A free Dev Dashboard "Catalogs" API key raises the rate limit to 5 searches/second. */
+    get clientId() { return env("SHOPIFY_CATALOG_CLIENT_ID"); },
+    get clientSecret() { return env("SHOPIFY_CATALOG_CLIENT_SECRET"); },
+    /** Public URL of your agent profile. Defaults to Shopify's example profile, fine for development. */
+    get profileUrl() {
+      return env("SHOPIFY_AGENT_PROFILE_URL", "https://shopify.dev/ucp/agent-profiles/examples/2026-08-25/valid-with-capabilities.json");
+    },
+    get disabled() { return env("SHOPIFY_CATALOG_DISABLED") === "true"; },
+  },
+
   anthropic: {
     get apiKey() { return env("ANTHROPIC_API_KEY"); },
   },
